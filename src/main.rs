@@ -512,20 +512,66 @@ fn read_dir<P: AsRef<Path>>(path: P) -> Result<(Vec<FEntry>, Maxs)> {
     Ok((res, maxs))
 }
 
+fn format_long_info(names: Vec<String>) -> String {
+    if names.is_empty() {
+        return String::new();
+    }
+
+    names.join("\n")
+}
+fn format_with_terminal_width(names: Vec<String>) -> String {
+    if names.is_empty() {
+        return String::new();
+    }
+
+    let (term_cols, _) = terminal_size().unwrap_or((80, 24));
+    let term_cols = term_cols as usize;
+
+    let total_width = names.iter().map(|n| n.len()).sum::<usize>() + names.len() - 1;
+    if total_width <= term_cols {
+        return names.join(" ");
+    }
+
+    let max_width = names.iter().map(|n| n.len()).max().unwrap_or(1);
+    let col_width = max_width + 2;
+    let max_cols = (term_cols / col_width).max(1);
+    let total_items = names.len();
+    let rows = total_items.div_ceil(max_cols);
+
+    let mut output = String::new();
+    for row in 0..rows {
+        let mut line = String::new();
+
+        for col in 0..max_cols {
+            let idx = col * rows + row;
+            if idx < total_items {
+                let name = &names[idx];
+                line.push_str(&format!("{name:<col_width$}"));
+            }
+        }
+
+        output.push_str(line.trim_end());
+        output.push('\n');
+    }
+
+    output.trim_end().to_string()
+}
+
 fn main() -> Result<()> {
     let conf = LssConf::parse();
     let (mut dir, maxs) = read_dir(&conf.path)?;
     dir.retain(|f| !f.name.starts_with(".") || conf.all);
     dir.sort_by_key(|k| k.name.clone());
 
-    for f in dir {
-        if conf.long {
-            println!("{}", f.to_fixed_str(conf.humanize, &maxs));
-        } else {
-            print!("{} ", &f.to_str());
-        }
-    }
-    if !conf.long {
+    if conf.long {
+        let names = dir
+            .iter()
+            .map(|f| f.to_fixed_str(conf.humanize, &maxs))
+            .collect();
+        println!("{}", format_long_info(names));
+    } else {
+        let names = dir.iter().map(|f| f.to_str()).collect();
+        print!("{} ", format_with_terminal_width(names));
         println!();
     }
     Ok(())
