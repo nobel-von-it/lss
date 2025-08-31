@@ -188,6 +188,9 @@ struct LssConf {
     all: bool,
     #[clap(short, long)]
     long: bool,
+
+    #[clap(short = 'S', long = "size")]
+    size_sort: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -561,10 +564,14 @@ fn main() -> Result<()> {
     let conf = LssConf::parse();
     let (mut dir, maxs) = read_dir(&conf.path)?;
     dir.retain(|f| !f.name.starts_with(".") || conf.all);
-    dir.sort_by_key(|k| k.name.clone());
+    if conf.size_sort {
+        dir.sort_by_key(|k| k.size);
+    } else {
+        dir.sort_by_key(|k| k.name.clone());
+    }
 
     if conf.long {
-        let names = dir
+        let mut names = dir
             .iter()
             .map(|f| f.to_fixed_str(conf.humanize, &maxs))
             .collect();
