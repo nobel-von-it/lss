@@ -564,6 +564,9 @@ fn main() -> Result<()> {
     let conf = LssConf::parse();
     let (mut dir, maxs) = read_dir(&conf.path)?;
     dir.retain(|f| !f.name.starts_with(".") || conf.all);
+    if dir.is_empty() {
+        return Ok(());
+    }
     if conf.size_sort {
         dir.sort_by_key(|k| k.size);
     } else {
