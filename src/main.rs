@@ -189,6 +189,8 @@ struct LssConf {
     #[clap(short, long)]
     long: bool,
 
+    #[clap(short, long)]
+    blocks: bool,
     #[clap(short = 'S', long = "size")]
     size_sort: bool,
     #[clap(short, long)]
@@ -247,6 +249,8 @@ struct FEntry {
     path: PathBuf,
     ftype: FType,
     modified: Time,
+
+    nblocks: u64,
     size: u64,
     hsize: String,
     owner: String,
@@ -285,7 +289,7 @@ impl FEntry {
             style.color.wrap(&self.name)
         }
     }
-    fn to_fixed_str(&self, is_human: bool, maxs: &Maxs) -> String {
+    fn to_fixed_str(&self, is_human: bool, maxs: &Maxs, blocks: bool) -> String {
         let (size, len) = if is_human {
             (self.hsize.clone(), maxs.hsize)
         } else {
@@ -296,18 +300,35 @@ impl FEntry {
         } else {
             self.get_styled_name(true)
         };
-        format!(
-            "{mode} {owner:>ownl$} {group:>grpl$} {size:>szl$} {modified} {name}",
-            mode = self.mode,
-            owner = self.owner,
-            ownl = maxs.owner,
-            group = self.group,
-            grpl = maxs.group,
-            size = size,
-            szl = len,
-            modified = self.modified.format(),
-            name = name,
-        )
+        if blocks {
+            format!(
+                "{blocks:>bll$} {mode} {owner:>ownl$} {group:>grpl$} {size:>szl$} {modified} {name}",
+                blocks = self.nblocks,
+                bll = maxs.blocks,
+                mode = self.mode,
+                owner = self.owner,
+                ownl = maxs.owner,
+                group = self.group,
+                grpl = maxs.group,
+                size = size,
+                szl = len,
+                modified = self.modified.format(),
+                name = name,
+            )
+        } else {
+            format!(
+                "{mode} {owner:>ownl$} {group:>grpl$} {size:>szl$} {modified} {name}",
+                mode = self.mode,
+                owner = self.owner,
+                ownl = maxs.owner,
+                group = self.group,
+                grpl = maxs.group,
+                size = size,
+                szl = len,
+                modified = self.modified.format(),
+                name = name,
+            )
+        }
     }
     fn to_str(&self) -> String {
         self.get_styled_name(true)
@@ -444,6 +465,7 @@ fn get_mode(md: &Metadata) -> String {
 struct Maxs {
     size: usize,
     hsize: usize,
+    blocks: usize,
     name: usize,
     owner: usize,
     group: usize,
@@ -455,11 +477,17 @@ fn read_dir<P: AsRef<Path>>(path: P, verbose: bool, all: bool) -> Result<(Vec<FE
     let mut maxs = Maxs::default();
 
     let mut dlen = 0;
+    let mut total = 0;
     let mut max_name = String::new();
     for f in fs::read_dir(path)? {
         dlen += 1;
         let f = f?;
         let md = f.metadata()?;
+
+        let blocks = md.blocks() / 2;
+        if blocks.to_string().len() > maxs.blocks {
+            maxs.blocks = blocks.to_string().len();
+        }
 
         let name = f
             .file_name()
@@ -499,6 +527,7 @@ fn read_dir<P: AsRef<Path>>(path: P, verbose: bool, all: bool) -> Result<(Vec<FE
         if size.to_string().len() > maxs.size {
             maxs.size = size.to_string().len();
         }
+        total += size;
         let hsize = get_human_readable_size(size);
         if hsize.len() > maxs.hsize {
             maxs.hsize = hsize.len();
@@ -517,6 +546,7 @@ fn read_dir<P: AsRef<Path>>(path: P, verbose: bool, all: bool) -> Result<(Vec<FE
         res.push(FEntry {
             name,
             path: f.path(),
+            nblocks: blocks,
             ftype,
             modified,
             size,
@@ -542,12 +572,17 @@ fn read_dir<P: AsRef<Path>>(path: P, verbose: bool, all: bool) -> Result<(Vec<FE
             }
             _ => panic!("how"),
         }
+        println!("total: {}", total / 1024);
+
+        println!();
         println!("max data:");
         println!("  name - {} ({})", maxs.name, max_name);
         println!("  size - {}", maxs.size);
         println!("  hsize - {}", maxs.hsize);
         println!("  owner - {}", maxs.owner);
         println!("  group - {}", maxs.group);
+        println!();
+        println!();
     }
 
     Ok((res, maxs))
@@ -625,10 +660,12 @@ fn main() -> Result<()> {
     sort(&mut dir, conf.reverse, conf.size_sort, conf.verbose);
 
     if conf.long {
+        let tblocks: u64 = dir.iter().map(|fe| fe.nblocks).sum();
         let mut names = dir
             .iter()
-            .map(|f| f.to_fixed_str(conf.humanize, &maxs))
+            .map(|f| f.to_fixed_str(conf.humanize, &maxs, conf.blocks))
             .collect();
+        println!("total {}", tblocks);
         println!("{}", format_long_info(names));
     } else {
         let names = dir.iter().map(|f| f.to_str()).collect();
