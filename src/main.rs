@@ -191,6 +191,8 @@ struct LssConf {
 
     #[clap(short = 'S', long = "size")]
     size_sort: bool,
+    #[clap(short, long)]
+    reverse: bool,
 
     #[clap(short, long)]
     verbose: bool,
@@ -550,6 +552,27 @@ fn read_dir<P: AsRef<Path>>(path: P, verbose: bool, all: bool) -> Result<(Vec<FE
 
     Ok((res, maxs))
 }
+fn sort(dir: &mut Vec<FEntry>, nrev: bool, bsize: bool, verbose: bool) {
+    if bsize {
+        if verbose {
+            let msg = (Color::Green).wrap("size");
+            println!("sortnig by {}", msg);
+        }
+        dir.sort_by_key(|fe| fe.size)
+    } else {
+        if verbose {
+            let msg = (Color::Green).wrap("name");
+            println!("sortnig by {}", msg);
+        }
+        dir.sort_by_key(|fe| fe.name.clone())
+    }
+    if nrev {
+        if verbose {
+            println!("also reversing");
+        }
+        dir.reverse();
+    }
+}
 
 fn format_long_info(names: Vec<String>) -> String {
     if names.is_empty() {
@@ -599,12 +622,7 @@ fn format_with_terminal_width(names: Vec<String>) -> String {
 fn main() -> Result<()> {
     let conf = LssConf::parse();
     let (mut dir, maxs) = read_dir(&conf.path, conf.verbose, conf.all)?;
-    dir.retain(|f| !f.name.starts_with(".") || conf.all);
-    if conf.size_sort {
-        dir.sort_by_key(|k| k.size);
-    } else {
-        dir.sort_by_key(|k| k.name.clone());
-    }
+    sort(&mut dir, conf.reverse, conf.size_sort, conf.verbose);
 
     if conf.long {
         let mut names = dir
