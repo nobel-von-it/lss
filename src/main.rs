@@ -191,6 +191,9 @@ struct LssConf {
 
     #[clap(short = 'S', long = "size")]
     size_sort: bool,
+
+    #[clap(short, long)]
+    verbose: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -199,6 +202,7 @@ enum Color {
     Aqua,
     Blue,
     Green,
+    Yellow,
     #[default]
     White,
 }
@@ -208,6 +212,7 @@ impl Color {
         match self {
             Color::Red => "\x1b[31m",
             Color::Green => "\x1b[32m",
+            Color::Yellow => "\x1b[33m",
             Color::Blue => "\x1b[34m",
             Color::Aqua => "\x1b[36m",
             Color::White => "\x1b[37m",
@@ -442,12 +447,15 @@ struct Maxs {
     group: usize,
 }
 
-fn read_dir<P: AsRef<Path>>(path: P) -> Result<(Vec<FEntry>, Maxs)> {
+fn read_dir<P: AsRef<Path>>(path: P, verbose: bool, all: bool) -> Result<(Vec<FEntry>, Maxs)> {
     let mut res = Vec::new();
 
     let mut maxs = Maxs::default();
 
+    let mut dlen = 0;
+    let mut max_name = String::new();
     for f in fs::read_dir(path)? {
+        dlen += 1;
         let f = f?;
         let md = f.metadata()?;
 
@@ -456,9 +464,14 @@ fn read_dir<P: AsRef<Path>>(path: P) -> Result<(Vec<FEntry>, Maxs)> {
             .to_str()
             .ok_or(anyhow!("non-valid unicode in name"))?
             .to_string();
+        if !all && name.starts_with(".") {
+            dlen -= 1;
+            continue;
+        }
 
         if name.len() > maxs.name {
             maxs.name = name.len();
+            max_name = name.clone();
         }
 
         let ftype = if md.is_dir() {
@@ -511,6 +524,29 @@ fn read_dir<P: AsRef<Path>>(path: P) -> Result<(Vec<FEntry>, Maxs)> {
             mode,
         })
     }
+    if verbose {
+        match res.len() {
+            0 => {
+                let msg = (Color::Red).wrap("not_found");
+                println!("{} ({}/{}) entries in dir", msg, res.len(), dlen)
+            }
+            l if l < dlen => {
+                let msg = (Color::Yellow).wrap(res.len().to_string());
+                println!("found {}/{} entries in dir", msg, dlen)
+            }
+            l if l == dlen => {
+                let msg = (Color::Green).wrap(res.len().to_string());
+                println!("found all ({}/{}) entries in dir", msg, dlen)
+            }
+            _ => panic!("how"),
+        }
+        println!("max data:");
+        println!("  name - {} ({})", maxs.name, max_name);
+        println!("  size - {}", maxs.size);
+        println!("  hsize - {}", maxs.hsize);
+        println!("  owner - {}", maxs.owner);
+        println!("  group - {}", maxs.group);
+    }
 
     Ok((res, maxs))
 }
@@ -562,7 +598,7 @@ fn format_with_terminal_width(names: Vec<String>) -> String {
 
 fn main() -> Result<()> {
     let conf = LssConf::parse();
-    let (mut dir, maxs) = read_dir(&conf.path)?;
+    let (mut dir, maxs) = read_dir(&conf.path, conf.verbose, conf.all)?;
     dir.retain(|f| !f.name.starts_with(".") || conf.all);
     if conf.size_sort {
         dir.sort_by_key(|k| k.size);
