@@ -1,9 +1,13 @@
-[package]
-name = "lss"
-version = "0.1.0"
-edition = "2024"
-
 [dependencies]
 anyhow = "1.0.99"
-clap = { version = "4.5.45", features = ["derive"] }
+colored = "3.0.0"
 libc = "0.2.175"
+
+[dependencies.clap]
+features = ["derive"]
+version = "4.5.45"
+
+[package]
+edition = "2024"
+name = "lss"
+version = "0.1.0"

@@ -1,6 +1,7 @@
 use anyhow::Result;
 use anyhow::anyhow;
 use clap::Parser;
+use colored::Colorize;
 
 use std::{
     fs::{self, Metadata},
@@ -9,6 +10,34 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
+
+struct L;
+impl L {
+    fn info<S: AsRef<str>>(s: S) {
+        println!(
+            "[{}] [{}] {}",
+            "INFO".dimmed(),
+            Time::now().format().dimmed(),
+            s.as_ref()
+        );
+    }
+    fn warn<S: AsRef<str>>(s: S) {
+        println!(
+            "[{}] [{}] {}",
+            "WARN".yellow(),
+            Time::now().format().dimmed(),
+            s.as_ref()
+        );
+    }
+    fn error<S: AsRef<str>>(s: S) {
+        println!(
+            "[{}] [{}] {}",
+            "ERROR".red(),
+            Time::now().format().dimmed(),
+            s.as_ref()
+        );
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Time {
@@ -29,6 +58,9 @@ impl From<SystemTime> for Time {
 }
 
 impl Time {
+    fn now() -> Self {
+        SystemTime::now().into()
+    }
     pub fn from_created(metadata: &Metadata) -> io::Result<Self> {
         let created = metadata.created()?;
         Ok(Self::from(created))
@@ -479,7 +511,7 @@ fn read_dir<P: AsRef<Path>>(path: P, verbose: bool, all: bool) -> Result<(Vec<FE
     let mut dlen = 0;
     let mut total = 0;
     let mut max_name = String::new();
-    for f in fs::read_dir(path)? {
+    for f in fs::read_dir(&path)? {
         dlen += 1;
         let f = f?;
         let md = f.metadata()?;
@@ -558,30 +590,39 @@ fn read_dir<P: AsRef<Path>>(path: P, verbose: bool, all: bool) -> Result<(Vec<FE
     }
     if verbose {
         match res.len() {
-            0 => {
-                let msg = (Color::Red).wrap("not_found");
-                println!("{} ({}/{}) entries in dir", msg, res.len(), dlen)
-            }
-            l if l < dlen => {
-                let msg = (Color::Yellow).wrap(res.len().to_string());
-                println!("found {}/{} entries in dir", msg, dlen)
-            }
-            l if l == dlen => {
-                let msg = (Color::Green).wrap(res.len().to_string());
-                println!("found all ({}/{}) entries in dir", msg, dlen)
-            }
+            0 => L::error(format!(
+                "{} ({}/{}) entries in `{}`",
+                "not_found".red(),
+                res.len(),
+                dlen,
+                path.as_ref().display(),
+            )),
+            l if l < dlen => L::warn(format!(
+                "found {}/{} entries in `{}`",
+                res.len().to_string().yellow(),
+                dlen,
+                path.as_ref().display(),
+            )),
+            l if l == dlen => L::info(format!(
+                "found all ({}/{}) entries in `{}`",
+                res.len().to_string(),
+                dlen,
+                path.as_ref().display(),
+            )),
             _ => panic!("how"),
         }
-        println!("total: {}", total / 1024);
 
         println!();
-        println!("max data:");
-        println!("  name - {} ({})", maxs.name, max_name);
-        println!("  size - {}", maxs.size);
-        println!("  hsize - {}", maxs.hsize);
-        println!("  owner - {}", maxs.owner);
-        println!("  group - {}", maxs.group);
+        L::info(format!("total number pre {}", total / 1024));
+
         println!();
+        L::info("MAXS DATA:".bold().to_string());
+        L::info(format!("  name - {} ({})", maxs.name, max_name.dimmed()));
+        L::info(format!("  size - {}", maxs.size));
+        L::info(format!("  hsize - {}", maxs.hsize));
+        L::info(format!("  owner - {}", maxs.owner));
+        L::info(format!("  group - {}", maxs.group));
+
         println!();
     }
 
@@ -590,20 +631,18 @@ fn read_dir<P: AsRef<Path>>(path: P, verbose: bool, all: bool) -> Result<(Vec<FE
 fn sort(dir: &mut Vec<FEntry>, nrev: bool, bsize: bool, verbose: bool) {
     if bsize {
         if verbose {
-            let msg = (Color::Green).wrap("size");
-            println!("sortnig by {}", msg);
+            L::info(format!("sortnig by {}", "size".bold()));
         }
         dir.sort_by_key(|fe| fe.size)
     } else {
         if verbose {
-            let msg = (Color::Green).wrap("name");
-            println!("sortnig by {}", msg);
+            L::info(format!("sortnig by {}", "name".bold()));
         }
         dir.sort_by_key(|fe| fe.name.clone())
     }
     if nrev {
         if verbose {
-            println!("also reversing");
+            L::info(format!("also reversing"));
         }
         dir.reverse();
     }
