@@ -215,6 +215,8 @@ struct LssConf {
 
     #[clap(short = 'H', long)]
     humanize: bool,
+    #[clap(short = 'Q', long)]
+    quoted: bool,
 
     #[clap(short, long)]
     all: bool,
@@ -321,16 +323,24 @@ impl FEntry {
             style.color.wrap(&self.name)
         }
     }
-    fn to_fixed_str(&self, is_human: bool, maxs: &Maxs, blocks: bool) -> String {
+    fn to_fixed_str(&self, is_human: bool, maxs: &Maxs, blocks: bool, quoted: bool) -> String {
         let (size, len) = if is_human {
             (self.hsize.clone(), maxs.hsize)
         } else {
             (self.size.to_string(), maxs.size)
         };
         let name = if let FType::Symlink(target) = &self.ftype {
-            format!("{} -> {}", self.get_styled_name(false), target)
+            if quoted {
+                format!("\"{}\" -> \"{}\"", &self.name, &target)
+            } else {
+                format!("{} -> {}", self.get_styled_name(false), target)
+            }
         } else {
-            self.get_styled_name(true)
+            if quoted {
+                format!("\"{}\"", &self.name)
+            } else {
+                self.get_styled_name(true)
+            }
         };
         if blocks {
             format!(
@@ -362,8 +372,12 @@ impl FEntry {
             )
         }
     }
-    fn to_str(&self) -> String {
-        self.get_styled_name(true)
+    fn to_str(&self, quoted: bool) -> String {
+        if quoted {
+            format!("\"{}\"", &self.name)
+        } else {
+            self.get_styled_name(true)
+        }
     }
 }
 
@@ -702,12 +716,12 @@ fn main() -> Result<()> {
         let tblocks: u64 = dir.iter().map(|fe| fe.nblocks).sum();
         let mut names = dir
             .iter()
-            .map(|f| f.to_fixed_str(conf.humanize, &maxs, conf.blocks))
+            .map(|f| f.to_fixed_str(conf.humanize, &maxs, conf.blocks, conf.quoted))
             .collect();
         println!("total {}", tblocks);
         println!("{}", format_long_info(names));
     } else {
-        let names = dir.iter().map(|f| f.to_str()).collect();
+        let names = dir.iter().map(|f| f.to_str(conf.quoted)).collect();
         print!("{} ", format_with_terminal_width(names));
         println!();
     }
