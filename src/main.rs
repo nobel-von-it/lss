@@ -208,6 +208,21 @@ fn terminal_size() -> Option<(u16, u16)> {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+enum DisplayColor {
+    #[default]
+    Standart,
+    Empty,
+}
+impl<S: AsRef<str>> From<S> for DisplayColor {
+    fn from(s: S) -> Self {
+        match s.as_ref().to_lowercase().as_str() {
+            "none" | "empty" => Self::Empty,
+            _ => Self::Standart,
+        }
+    }
+}
+
 #[derive(Debug, Parser)]
 struct LssConf {
     #[clap(default_value = ".")]
@@ -227,6 +242,9 @@ struct LssConf {
     size_sort: bool,
     #[clap(short, long)]
     reverse: bool,
+
+    #[clap(long, default_value = "standart")]
+    color: DisplayColor,
 
     #[clap(short, long)]
     verbose: bool,
@@ -291,8 +309,8 @@ struct FEntry {
 }
 
 impl FEntry {
-    fn get_styled_name(&self, suf: bool) -> String {
-        let style = match self.ftype {
+    fn _get_style(&self) -> Style {
+        match self.ftype {
             FType::File(true) => Style {
                 suffix: None,
                 color: Color::Green,
@@ -313,7 +331,10 @@ impl FEntry {
                 suffix: Some('!'),
                 color: Color::Red,
             },
-        };
+        }
+    }
+    fn get_styled_name(&self, suf: bool) -> String {
+        let style = self._get_style();
 
         if suf && style.suffix.is_some() {
             format!("{}{}", style.color.wrap(&self.name), style.suffix.unwrap())
@@ -321,16 +342,42 @@ impl FEntry {
             style.color.wrap(&self.name)
         }
     }
-    fn to_fixed_str(&self, is_human: bool, maxs: &Maxs, blocks: bool) -> String {
+    fn get_colorless_name(&self, suf: bool) -> String {
+        let style = self._get_style();
+        if suf && style.suffix.is_some() {
+            format!("{}{}", &self.name, style.suffix.unwrap())
+        } else {
+            self.name.clone()
+        }
+    }
+    fn to_fixed_str(
+        &self,
+        is_human: bool,
+        maxs: &Maxs,
+        blocks: bool,
+        color: DisplayColor,
+    ) -> String {
         let (size, len) = if is_human {
             (self.hsize.clone(), maxs.hsize)
         } else {
             (self.size.to_string(), maxs.size)
         };
-        let name = if let FType::Symlink(target) = &self.ftype {
-            format!("{} -> {}", self.get_styled_name(false), target)
-        } else {
-            self.get_styled_name(true)
+
+        let name = match color {
+            DisplayColor::Standart => {
+                if let FType::Symlink(target) = &self.ftype {
+                    format!("{} -> {}", self.get_styled_name(false), target)
+                } else {
+                    self.get_styled_name(true)
+                }
+            }
+            DisplayColor::Empty => {
+                if let FType::Symlink(target) = &self.ftype {
+                    format!("{} -> {}", self.get_colorless_name(false), target)
+                } else {
+                    self.get_colorless_name(true)
+                }
+            }
         };
         if blocks {
             format!(
@@ -362,8 +409,11 @@ impl FEntry {
             )
         }
     }
-    fn to_str(&self) -> String {
-        self.get_styled_name(true)
+    fn to_str(&self, color: DisplayColor) -> String {
+        match color {
+            DisplayColor::Standart => self.get_styled_name(true),
+            DisplayColor::Empty => self.get_colorless_name(true),
+        }
     }
 }
 
@@ -702,12 +752,12 @@ fn main() -> Result<()> {
         let tblocks: u64 = dir.iter().map(|fe| fe.nblocks).sum();
         let mut names = dir
             .iter()
-            .map(|f| f.to_fixed_str(conf.humanize, &maxs, conf.blocks))
+            .map(|f| f.to_fixed_str(conf.humanize, &maxs, conf.blocks, conf.color))
             .collect();
         println!("total {}", tblocks);
         println!("{}", format_long_info(names));
     } else {
-        let names = dir.iter().map(|f| f.to_str()).collect();
+        let names = dir.iter().map(|f| f.to_str(conf.color)).collect();
         print!("{} ", format_with_terminal_width(names));
         println!();
     }
