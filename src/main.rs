@@ -230,6 +230,8 @@ struct LssConf {
 
     #[clap(short = 'H', long)]
     humanize: bool,
+    #[clap(short = 'Q', long)]
+    quoted: bool,
 
     #[clap(short, long)]
     all: bool,
@@ -356,29 +358,37 @@ impl FEntry {
         maxs: &Maxs,
         blocks: bool,
         color: DisplayColor,
+        quoted: bool,
     ) -> String {
         let (size, len) = if is_human {
             (self.hsize.clone(), maxs.hsize)
         } else {
             (self.size.to_string(), maxs.size)
         };
-
-        let name = match color {
-            DisplayColor::Standart => {
-                if let FType::Symlink(target) = &self.ftype {
-                    format!("{} -> {}", self.get_styled_name(false), target)
-                } else {
-                    self.get_styled_name(true)
+        let name = if let FType::Symlink(target) = &self.ftype {
+            if quoted {
+                format!("\"{}\" -> \"{}\"", &self.name, &target)
+            } else {
+                match color {
+                    DisplayColor::Standart => {
+                        format!("{} -> {}", self.get_styled_name(false), target)
+                    }
+                    DisplayColor::Empty => {
+                        format!("{} -> {}", self.get_colorless_name(false), target)
+                    }
                 }
             }
-            DisplayColor::Empty => {
-                if let FType::Symlink(target) = &self.ftype {
-                    format!("{} -> {}", self.get_colorless_name(false), target)
-                } else {
-                    self.get_colorless_name(true)
+        } else {
+            if quoted {
+                format!("\"{}\"", &self.name)
+            } else {
+                match color {
+                    DisplayColor::Standart => self.get_styled_name(true),
+                    DisplayColor::Empty => self.get_colorless_name(true),
                 }
             }
         };
+
         if blocks {
             format!(
                 "{blocks:>bll$} {mode} {owner:>ownl$} {group:>grpl$} {size:>szl$} {modified} {name}",
@@ -409,10 +419,14 @@ impl FEntry {
             )
         }
     }
-    fn to_str(&self, color: DisplayColor) -> String {
-        match color {
-            DisplayColor::Standart => self.get_styled_name(true),
-            DisplayColor::Empty => self.get_colorless_name(true),
+    fn to_str(&self, color: DisplayColor, quoted: bool) -> String {
+        if quoted {
+            format!("\"{}\"", &self.name)
+        } else {
+            match color {
+                DisplayColor::Standart => self.get_styled_name(true),
+                DisplayColor::Empty => self.get_colorless_name(true),
+            }
         }
     }
 }
@@ -752,12 +766,15 @@ fn main() -> Result<()> {
         let tblocks: u64 = dir.iter().map(|fe| fe.nblocks).sum();
         let mut names = dir
             .iter()
-            .map(|f| f.to_fixed_str(conf.humanize, &maxs, conf.blocks, conf.color))
+            .map(|f| f.to_fixed_str(conf.humanize, &maxs, conf.blocks, conf.color, conf.quoted))
             .collect();
         println!("total {}", tblocks);
         println!("{}", format_long_info(names));
     } else {
-        let names = dir.iter().map(|f| f.to_str(conf.color)).collect();
+        let names = dir
+            .iter()
+            .map(|f| f.to_str(conf.color, conf.quoted))
+            .collect();
         print!("{} ", format_with_terminal_width(names));
         println!();
     }
