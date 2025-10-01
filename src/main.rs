@@ -363,13 +363,16 @@ impl FEntry {
         blocks: bool,
         color: DisplayColor,
         quoted: bool,
+        link: bool,
     ) -> String {
         let (size, len) = if is_human {
             (self.hsize.clone(), maxs.hsize)
         } else {
             (self.size.to_string(), maxs.size)
         };
-        let name = if let FType::Symlink(target) = &self.ftype {
+        let name = if let FType::Symlink(target) = &self.ftype
+            && link
+        {
             if quoted {
                 format!("\"{}\" -> \"{}\"", &self.name, &target)
             } else {
@@ -835,7 +838,16 @@ fn main() -> Result<()> {
         let tblocks: u64 = dir.iter().map(|fe| fe.nblocks).sum();
         let mut names = dir
             .iter()
-            .map(|f| f.to_fixed_str(conf.humanize, &maxs, conf.blocks, conf.color, conf.quoted))
+            .map(|f| {
+                f.to_fixed_str(
+                    conf.humanize,
+                    &maxs,
+                    conf.blocks,
+                    conf.color,
+                    conf.quoted,
+                    conf.link,
+                )
+            })
             .collect();
         println!("total {}", tblocks);
         println!("{}", format_long_info(names));
