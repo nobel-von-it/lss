@@ -228,10 +228,14 @@ struct LssConf {
     #[clap(default_value = ".")]
     path: String,
 
+    #[clap(long)]
+    width: Option<usize>,
     #[clap(short = 'H', long)]
     humanize: bool,
     #[clap(short = 'Q', long)]
     quoted: bool,
+    #[clap(short = 'L', long)]
+    link: bool,
 
     #[clap(short, long)]
     all: bool,
@@ -719,24 +723,82 @@ fn format_long_info(names: Vec<String>) -> String {
 
     names.join("\n")
 }
-fn format_with_terminal_width(names: Vec<String>) -> String {
+fn calculate_optimal_layout(names: &[String], term_cols: usize, verbose: bool) -> usize {
+    let total_items = names.len();
+
+    for rows in 1..=total_items {
+        if verbose {
+            L::info(format!("ITERATION {rows}"));
+        }
+        let cols = total_items.div_ceil(rows);
+        let col_widths = calculate_column_widths(names, rows);
+        if verbose {
+            L::info(format!("  cols: {cols}"));
+            L::info(format!("  col_widths: {col_widths:?}"));
+        }
+
+        let total_width: usize = col_widths.iter().sum::<usize>() + (cols - 1) * 2;
+        if verbose {
+            L::info(format!("  total_width: {total_width}"));
+        }
+
+        if total_width <= term_cols {
+            return rows;
+        }
+    }
+
+    total_items
+}
+
+fn calculate_column_widths(names: &[String], rows: usize) -> Vec<usize> {
+    let total_items = names.len();
+    let cols = total_items.div_ceil(rows);
+    let mut col_widths = vec![0; cols];
+
+    for col in 0..cols {
+        for row in 0..rows {
+            let idx = col * rows + row;
+            if idx < total_items {
+                col_widths[col] = col_widths[col].max(names[idx].len() - 9);
+            }
+        }
+    }
+
+    col_widths
+}
+fn format_with_terminal_width(names: Vec<String>, width: Option<usize>, verbose: bool) -> String {
+    if verbose {
+        L::info("BEGIN FORMATTING");
+    }
     if names.is_empty() {
         return String::new();
     }
 
-    let (term_cols, _) = terminal_size().unwrap_or((80, 24));
-    let term_cols = term_cols as usize;
+    let term_cols = if let Some(width) = width {
+        width
+    } else {
+        terminal_size().unwrap_or((80, 24)).0 as usize
+    };
+    if verbose {
+        L::info(format!("col {term_cols}"));
+    }
 
-    let total_width = names.iter().map(|n| n.len()).sum::<usize>() + names.len() - 1;
+    let total_width = names.iter().map(|n| n.len() - 9).sum::<usize>() + names.len() - 1;
+    if verbose {
+        L::info(format!("all file width {total_width}"));
+    }
     if total_width <= term_cols {
         return names.join(" ");
     }
 
-    let max_width = names.iter().map(|n| n.len()).max().unwrap_or(1);
-    let col_width = max_width + 2;
-    let max_cols = (term_cols / col_width).max(1);
-    let total_items = names.len();
-    let rows = total_items.div_ceil(max_cols);
+    let rows = calculate_optimal_layout(&names, term_cols, verbose);
+    let col_widths = calculate_column_widths(&names, rows);
+    let max_cols = col_widths.len();
+    if verbose {
+        L::info(format!("rows: {rows}"));
+        L::info(format!("col_widths: {col_widths:?}"));
+        L::info(format!("max_cols: {max_cols}"));
+    }
 
     let mut output = String::new();
     for row in 0..rows {
@@ -744,9 +806,13 @@ fn format_with_terminal_width(names: Vec<String>) -> String {
 
         for col in 0..max_cols {
             let idx = col * rows + row;
-            if idx < total_items {
+            if idx < names.len() {
                 let name = &names[idx];
-                line.push_str(&format!("{name:<col_width$}"));
+                let padding = col_widths[col] - (name.len() - 9);
+                line.push_str(name);
+                if col < max_cols - 1 {
+                    line.push_str(&" ".repeat(padding + 2));
+                }
             }
         }
 
@@ -754,6 +820,9 @@ fn format_with_terminal_width(names: Vec<String>) -> String {
         output.push('\n');
     }
 
+    if verbose {
+        L::info(format!("END FORMATTING"));
+    }
     output.trim_end().to_string()
 }
 
@@ -775,7 +844,10 @@ fn main() -> Result<()> {
             .iter()
             .map(|f| f.to_str(conf.color, conf.quoted))
             .collect();
-        print!("{} ", format_with_terminal_width(names));
+        print!(
+            "{} ",
+            format_with_terminal_width(names, conf.width, conf.verbose)
+        );
         println!();
     }
     Ok(())
