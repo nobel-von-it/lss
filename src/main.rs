@@ -236,6 +236,8 @@ struct LssConf {
     quoted: bool,
     #[clap(short = 'L', long)]
     link: bool,
+    #[clap(short = 'A', long)]
+    absolute: bool,
 
     #[clap(short, long)]
     all: bool,
@@ -376,6 +378,14 @@ impl FEntry {
                 modified = self.modified.format(),
                 name = name,
             )
+        }
+    }
+    fn to_abs_str(&self, quoted: bool) -> Result<String> {
+        let absp = fs::canonicalize(&self.name)?;
+        if quoted {
+            Ok(format!("\"{}\"", absp.display()))
+        } else {
+            Ok(absp.display().to_string())
         }
     }
     fn to_str(&self, color: DisplayColor, quoted: bool) -> String {
@@ -789,7 +799,7 @@ fn main() -> Result<()> {
 
     if conf.long {
         let tblocks: u64 = dir.iter().map(|fe| fe.nblocks).sum();
-        let mut names = dir
+        let names = dir
             .iter()
             .map(|f| {
                 f.to_fixed_str(
@@ -803,6 +813,13 @@ fn main() -> Result<()> {
             })
             .collect();
         println!("total {}", tblocks);
+        println!("{}", format_long_info(names));
+    } else if conf.absolute {
+        let names = dir
+            .iter()
+            .map(|f| f.to_abs_str(conf.quoted))
+            .flatten()
+            .collect();
         println!("{}", format_long_info(names));
     } else {
         let names = dir
