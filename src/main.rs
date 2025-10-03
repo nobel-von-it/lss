@@ -208,6 +208,8 @@ struct LssConf {
     #[clap(short = 'A', long)]
     absolute: bool,
 
+    #[clap(short = 'o', long)]
+    line: bool,
     #[clap(short, long)]
     all: bool,
     #[clap(short, long)]
@@ -680,8 +682,12 @@ fn calculate_column_widths(names: &[String], rows: usize) -> Vec<usize> {
 
     col_widths
 }
-fn format_with_terminal_width(names: Vec<String>, width: Option<usize>) -> String {
+fn format_with_terminal_width(names: Vec<String>, width: Option<usize>, line: bool) -> String {
     info!("BEGIN FORMATTING");
+    if line {
+        info!("redirect to long");
+        return format_long_info(names);
+    }
     if names.is_empty() {
         return String::new();
     }
@@ -770,7 +776,10 @@ fn main() -> Result<()> {
             .iter()
             .map(|f| f.to_str(conf.color, conf.quoted))
             .collect();
-        print!("{} ", format_with_terminal_width(names, conf.width));
+        print!(
+            "{} ",
+            format_with_terminal_width(names, conf.width, conf.line)
+        );
         println!();
     }
     Ok(())
