@@ -2,6 +2,7 @@ use anyhow::Result;
 use anyhow::anyhow;
 use clap::Parser;
 use colored::Colorize;
+use log::{error, info, warn};
 
 use std::{
     fs::{self, Metadata},
@@ -10,35 +11,6 @@ use std::{
     path::{Path, PathBuf},
     time::{Duration, SystemTime},
 };
-
-struct L;
-impl L {
-    fn info<S: AsRef<str>>(s: S) {
-        println!(
-            "[{}] [{}] {}",
-            "INFO".dimmed(),
-            Time::now().format().dimmed(),
-            s.as_ref()
-        );
-    }
-    fn warn<S: AsRef<str>>(s: S) {
-        println!(
-            "[{}] [{}] {}",
-            "WARN".yellow(),
-            Time::now().format().dimmed(),
-            s.as_ref()
-        );
-    }
-    fn error<S: AsRef<str>>(s: S) {
-        println!(
-            "[{}] [{}] {}",
-            "ERROR".red(),
-            Time::now().format().dimmed(),
-            s.as_ref()
-        );
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Time {
     duration_since_epoch: Duration,
@@ -58,9 +30,6 @@ impl From<SystemTime> for Time {
 }
 
 impl Time {
-    fn now() -> Self {
-        SystemTime::now().into()
-    }
     pub fn from_created(metadata: &Metadata) -> io::Result<Self> {
         let created = metadata.created()?;
         Ok(Self::from(created))
@@ -253,9 +222,6 @@ struct LssConf {
 
     #[clap(long, default_value = "standart")]
     color: DisplayColor,
-
-    #[clap(short, long)]
-    verbose: bool,
 }
 enum FType {
     File(bool),
@@ -381,7 +347,7 @@ impl FEntry {
         }
     }
     fn to_abs_str(&self, quoted: bool) -> Result<String> {
-        let absp = fs::canonicalize(&self.name)?;
+        let absp = fs::canonicalize(&self.path)?;
         if quoted {
             Ok(format!("\"{}\"", absp.display()))
         } else {
@@ -536,7 +502,7 @@ struct Maxs {
     group: usize,
 }
 
-fn read_dir<P: AsRef<Path>>(path: P, verbose: bool, all: bool) -> Result<(Vec<FEntry>, Maxs)> {
+fn read_dir<P: AsRef<Path>>(path: P, all: bool) -> Result<(Vec<FEntry>, Maxs)> {
     let mut res = Vec::new();
 
     let mut maxs = Maxs::default();
@@ -621,62 +587,50 @@ fn read_dir<P: AsRef<Path>>(path: P, verbose: bool, all: bool) -> Result<(Vec<FE
             mode,
         })
     }
-    if verbose {
-        match res.len() {
-            0 => L::error(format!(
-                "{} ({}/{}) entries in `{}`",
-                "not_found".red(),
-                res.len(),
-                dlen,
-                path.as_ref().display(),
-            )),
-            l if l < dlen => L::warn(format!(
-                "found {}/{} entries in `{}`",
-                res.len().to_string().yellow(),
-                dlen,
-                path.as_ref().display(),
-            )),
-            l if l == dlen => L::info(format!(
-                "found all ({}/{}) entries in `{}`",
-                res.len().to_string(),
-                dlen,
-                path.as_ref().display(),
-            )),
-            _ => panic!("how"),
-        }
-
-        println!();
-        L::info(format!("total number pre {}", total / 1024));
-
-        println!();
-        L::info("MAXS DATA:".bold().to_string());
-        L::info(format!("  name - {} ({})", maxs.name, max_name.dimmed()));
-        L::info(format!("  size - {}", maxs.size));
-        L::info(format!("  hsize - {}", maxs.hsize));
-        L::info(format!("  owner - {}", maxs.owner));
-        L::info(format!("  group - {}", maxs.group));
-
-        println!();
+    match res.len() {
+        0 => error!(
+            "{} ({}/{}) entries in `{}`",
+            "not_found".red(),
+            res.len(),
+            dlen,
+            path.as_ref().display(),
+        ),
+        l if l < dlen => warn!(
+            "found {}/{} entries in `{}`",
+            res.len().to_string().yellow(),
+            dlen,
+            path.as_ref().display(),
+        ),
+        l if l == dlen => info!(
+            "found all ({}/{}) entries in `{}`",
+            res.len().to_string(),
+            dlen,
+            path.as_ref().display(),
+        ),
+        _ => panic!("how"),
     }
+
+    info!("total number pre {}", total / 1024);
+
+    info!("{}", "MAXS DATA:".bold());
+    info!("  name - {} ({})", maxs.name, max_name.dimmed());
+    info!("  size - {}", maxs.size);
+    info!("  hsize - {}", maxs.hsize);
+    info!("  owner - {}", maxs.owner);
+    info!("  group - {}", maxs.group);
 
     Ok((res, maxs))
 }
-fn sort(dir: &mut Vec<FEntry>, nrev: bool, bsize: bool, verbose: bool) {
+fn sort(dir: &mut Vec<FEntry>, nrev: bool, bsize: bool) {
     if bsize {
-        if verbose {
-            L::info(format!("sortnig by {}", "size".bold()));
-        }
+        info!("sortnig by {}", "size".bold());
         dir.sort_by_key(|fe| fe.size)
     } else {
-        if verbose {
-            L::info(format!("sortnig by {}", "name".bold()));
-        }
+        info!("sortnig by {}", "name".bold());
         dir.sort_by_key(|fe| fe.name.clone())
     }
     if nrev {
-        if verbose {
-            L::info(format!("also reversing"));
-        }
+        info!("also reversing");
         dir.reverse();
     }
 }
@@ -688,24 +642,18 @@ fn format_long_info(names: Vec<String>) -> String {
 
     names.join("\n")
 }
-fn calculate_optimal_layout(names: &[String], term_cols: usize, verbose: bool) -> usize {
+fn calculate_optimal_layout(names: &[String], term_cols: usize) -> usize {
     let total_items = names.len();
 
     for rows in 1..=total_items {
-        if verbose {
-            L::info(format!("ITERATION {rows}"));
-        }
+        info!("ITERATION {rows}");
         let cols = total_items.div_ceil(rows);
         let col_widths = calculate_column_widths(names, rows);
-        if verbose {
-            L::info(format!("  cols: {cols}"));
-            L::info(format!("  col_widths: {col_widths:?}"));
-        }
+        info!("  cols: {cols}");
+        info!("  col_widths: {col_widths:?}");
 
         let total_width: usize = col_widths.iter().sum::<usize>() + (cols - 1) * 2;
-        if verbose {
-            L::info(format!("  total_width: {total_width}"));
-        }
+        info!("  total_width: {total_width}");
 
         if total_width <= term_cols {
             return rows;
@@ -732,10 +680,8 @@ fn calculate_column_widths(names: &[String], rows: usize) -> Vec<usize> {
 
     col_widths
 }
-fn format_with_terminal_width(names: Vec<String>, width: Option<usize>, verbose: bool) -> String {
-    if verbose {
-        L::info("BEGIN FORMATTING");
-    }
+fn format_with_terminal_width(names: Vec<String>, width: Option<usize>) -> String {
+    info!("BEGIN FORMATTING");
     if names.is_empty() {
         return String::new();
     }
@@ -745,26 +691,22 @@ fn format_with_terminal_width(names: Vec<String>, width: Option<usize>, verbose:
     } else {
         terminal_size().unwrap_or((80, 24)).0 as usize
     };
-    if verbose {
-        L::info(format!("col {term_cols}"));
-    }
+    info!("col {term_cols}");
 
     let total_width = names.iter().map(|n| n.len() - 9).sum::<usize>() + names.len() - 1;
-    if verbose {
-        L::info(format!("all file width {total_width}"));
-    }
+    info!("all file width {total_width}");
     if total_width <= term_cols {
+        info!("passed in one line");
+        info!("END FORMATTING");
         return names.join(" ");
     }
 
-    let rows = calculate_optimal_layout(&names, term_cols, verbose);
+    let rows = calculate_optimal_layout(&names, term_cols);
     let col_widths = calculate_column_widths(&names, rows);
     let max_cols = col_widths.len();
-    if verbose {
-        L::info(format!("rows: {rows}"));
-        L::info(format!("col_widths: {col_widths:?}"));
-        L::info(format!("max_cols: {max_cols}"));
-    }
+    info!("rows: {rows}");
+    info!("col_widths: {col_widths:?}");
+    info!("max_cols: {max_cols}");
 
     let mut output = String::new();
     for row in 0..rows {
@@ -786,16 +728,18 @@ fn format_with_terminal_width(names: Vec<String>, width: Option<usize>, verbose:
         output.push('\n');
     }
 
-    if verbose {
-        L::info(format!("END FORMATTING"));
-    }
+    info!("END FORMATTING");
     output.trim_end().to_string()
 }
 
 fn main() -> Result<()> {
+    env_logger::init();
+    info!("START LOGGING");
+
+    info!("parsing cmd arguments");
     let conf = LssConf::parse();
-    let (mut dir, maxs) = read_dir(&conf.path, conf.verbose, conf.all)?;
-    sort(&mut dir, conf.reverse, conf.size_sort, conf.verbose);
+    let (mut dir, maxs) = read_dir(&conf.path, conf.all)?;
+    sort(&mut dir, conf.reverse, conf.size_sort);
 
     if conf.long {
         let tblocks: u64 = dir.iter().map(|fe| fe.nblocks).sum();
@@ -826,10 +770,7 @@ fn main() -> Result<()> {
             .iter()
             .map(|f| f.to_str(conf.color, conf.quoted))
             .collect();
-        print!(
-            "{} ",
-            format_with_terminal_width(names, conf.width, conf.verbose)
-        );
+        print!("{} ", format_with_terminal_width(names, conf.width));
         println!();
     }
     Ok(())
