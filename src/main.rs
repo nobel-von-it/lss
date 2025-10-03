@@ -255,43 +255,6 @@ struct LssConf {
     #[clap(short, long)]
     verbose: bool,
 }
-
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-enum Color {
-    Red,
-    Aqua,
-    Blue,
-    Green,
-    Yellow,
-    #[default]
-    White,
-}
-
-impl Color {
-    fn get_code(&self) -> &str {
-        match self {
-            Color::Red => "\x1b[31m",
-            Color::Green => "\x1b[32m",
-            Color::Yellow => "\x1b[33m",
-            Color::Blue => "\x1b[34m",
-            Color::Aqua => "\x1b[36m",
-            Color::White => "\x1b[37m",
-        }
-    }
-    fn reset(&self) -> &str {
-        "\x1b[0m"
-    }
-    fn wrap<S: AsRef<str>>(&self, s: S) -> String {
-        format!("{}{}{}", self.get_code(), s.as_ref(), self.reset())
-    }
-}
-
-#[derive(Debug, Default)]
-struct Style {
-    suffix: Option<char>,
-    color: Color,
-}
-
 enum FType {
     File(bool),
     Dir,
@@ -315,43 +278,32 @@ struct FEntry {
 }
 
 impl FEntry {
-    fn _get_style(&self) -> Style {
+    fn _get_name_and_suffix(&self) -> (String, Option<char>) {
         match self.ftype {
-            FType::File(true) => Style {
-                suffix: None,
-                color: Color::Green,
-            },
-            FType::File(false) | FType::Other => Style {
-                suffix: None,
-                color: Color::White,
-            },
-            FType::Dir => Style {
-                suffix: Some('/'),
-                color: Color::Blue,
-            },
-            FType::Symlink(_) => Style {
-                suffix: Some('@'),
-                color: Color::Aqua,
-            },
-            FType::BrokenSymlink => Style {
-                suffix: Some('!'),
-                color: Color::Red,
-            },
+            FType::File(true) => (self.name.green().to_string(), None),
+            FType::File(false) | FType::Other => (self.name.white().to_string(), None),
+            FType::Dir => (self.name.blue().to_string(), Some('/')),
+            FType::Symlink(_) => (self.name.cyan().to_string(), Some('@')),
+            FType::BrokenSymlink => (self.name.red().to_string(), Some('!')),
         }
     }
     fn get_styled_name(&self, suf: bool) -> String {
-        let style = self._get_style();
+        let (name, suffix) = self._get_name_and_suffix();
 
-        if suf && style.suffix.is_some() {
-            format!("{}{}", style.color.wrap(&self.name), style.suffix.unwrap())
+        if let Some(suffix) = suffix
+            && suf
+        {
+            format!("{}{}", name, suffix)
         } else {
-            style.color.wrap(&self.name)
+            name
         }
     }
     fn get_colorless_name(&self, suf: bool) -> String {
-        let style = self._get_style();
-        if suf && style.suffix.is_some() {
-            format!("{}{}", &self.name, style.suffix.unwrap())
+        let (_, suffix) = self._get_name_and_suffix();
+        if let Some(suffix) = suffix
+            && suf
+        {
+            format!("{}{}", &self.name, suffix)
         } else {
             self.name.clone()
         }
@@ -762,7 +714,8 @@ fn calculate_column_widths(names: &[String], rows: usize) -> Vec<usize> {
         for row in 0..rows {
             let idx = col * rows + row;
             if idx < total_items {
-                col_widths[col] = col_widths[col].max(names[idx].len() - 9);
+                col_widths[col] = col_widths[col]
+                    .max(names[idx].len().checked_sub(9).unwrap_or(names[idx].len()));
             }
         }
     }
