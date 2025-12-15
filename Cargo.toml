@@ -1,7 +1,9 @@
 [dependencies]
 anyhow = "1.0.99"
 colored = "3.0.0"
+env_logger = "0.11.8"
 libc = "0.2.175"
+log = "0.4.28"
 
 [dependencies.clap]
 features = ["derive"]
